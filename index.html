@@ -66,6 +66,18 @@
             font-size: 1.1rem;
         }
 
+        .input-group {
+            margin-bottom: 2rem;
+            width: 100%;
+            max-width: 300px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--muted-color);
+        }
+
         input[type="number"] {
             background: transparent;
             border: 2px solid var(--accent-color);
@@ -76,8 +88,13 @@
             padding: 1rem;
             border-radius: 12px;
             width: 150px;
-            margin-bottom: 2rem;
             outline: none;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--accent-color);
+            margin-top: 0.5rem;
         }
 
         button {
@@ -211,18 +228,18 @@
 
     <div id="setup-screen" class="screen active">
         <h1>Yogic Practice</h1>
-        <p>Set your target cycles<br>(1 cycle = 2 jumps)</p>
-        <input type="number" id="goal-input" value="108" min="1">
-        <button onclick="requestPermissionsAndStart('calibrate')">Start Calibration</button>
-        <button id="btn-use-prev" class="secondary" style="display: none;" onclick="requestPermissionsAndStart('previous')">Use Previous Calibration</button>
-    </div>
+        
+        <div class="input-group">
+            <label>Target Cycles (1 = 2 jumps)</label>
+            <input type="number" id="goal-input" value="108" min="1">
+        </div>
 
-    <div id="calibration-screen" class="screen">
-        <h2>Calibration</h2>
-        <p>Do 5 full jumps normally to set your impact threshold.</p>
-        <div class="cycle-counter" id="cal-count">0/5</div>
-        <div class="live-force" id="cal-force">0.00</div>
-        <button class="secondary" onclick="switchScreen('setup-screen')">Cancel</button>
+        <div class="input-group">
+            <label>Jump Sensitivity: <span id="sens-val">5.0</span></label>
+            <input type="range" id="sensitivity" min="2" max="15" step="0.5" value="5.0" oninput="document.getElementById('sens-val').innerText = parseFloat(this.value).toFixed(1)">
+        </div>
+
+        <button onclick="requestPermissionsAndStart()">Start Practice</button>
     </div>
 
     <div id="counter-screen" class="screen">
@@ -257,28 +274,22 @@
         let goal = 108;
         let cycles = 0;
         let currentJumps = 0;
-        let threshold = 0;
+        let threshold = 5.0;
         let inImpact = false;
         let lastJumpTime = 0;
-        let appState = 'idle'; // idle, calibrating, counting
+        let appState = 'idle'; // idle, counting
         
-        // Accelerometer tracking
-        let px = null, py = null, pz = null;
-        
-        // Calibration tracking
-        let calPeaks = [];
-        let currentPeak = 0;
-        let calInImpact = false;
-
         // Features
         let wakeLock = null;
         const speechTargets = [3, 7, 12, 21, 24, 33, 48, 64, 84, 96, 108];
 
         // Initialization
         window.onload = () => {
+            // Load saved threshold if it exists
             const savedThreshold = localStorage.getItem('jumpThresholdV1');
             if (savedThreshold) {
-                document.getElementById('btn-use-prev').style.display = 'block';
+                document.getElementById('sensitivity').value = savedThreshold;
+                document.getElementById('sens-val').innerText = parseFloat(savedThreshold).toFixed(1);
             }
         };
 
@@ -289,8 +300,12 @@
         }
 
         // Permissions & Startup (Triggered by user click)
-        async function requestPermissionsAndStart(mode) {
+        async function requestPermissionsAndStart() {
             goal = parseInt(document.getElementById('goal-input').value) || 108;
+            threshold = parseFloat(document.getElementById('sensitivity').value);
+            
+            // Save sensitivity for next time
+            localStorage.setItem('jumpThresholdV1', threshold.toString());
             
             // Unlock Speech Synthesis
             const utterance = new SpeechSynthesisUtterance('');
@@ -310,7 +325,7 @@
                 try {
                     const permission = await DeviceMotionEvent.requestPermission();
                     if (permission === 'granted') {
-                        startMode(mode);
+                        startCounting();
                     } else {
                         alert("Motion access denied. App cannot function.");
                     }
@@ -318,28 +333,8 @@
                     alert("Error requesting motion permissions.");
                 }
             } else {
-                startMode(mode);
-            }
-        }
-
-        function startMode(mode) {
-            window.addEventListener('devicemotion', handleMotion);
-            
-            if (mode === 'previous') {
-                threshold = parseFloat(localStorage.getItem('jumpThresholdV1'));
                 startCounting();
-            } else {
-                startCalibration();
             }
-        }
-
-        function startCalibration() {
-            appState = 'calibrating';
-            calPeaks = [];
-            currentPeak = 0;
-            calInImpact = false;
-            document.getElementById('cal-count').innerText = `0/5`;
-            switchScreen('calibration-screen');
         }
 
         function startCounting() {
@@ -349,70 +344,47 @@
             inImpact = false;
             lastJumpTime = Date.now();
             updateCounterUI();
+            
+            // Attach motion listener
+            window.addEventListener('devicemotion', handleMotion);
             switchScreen('counter-screen');
         }
 
-        // Core Motion Logic
+        // Core Motion Logic (Absolute Magnitude)
         function handleMotion(event) {
-            const acc = event.accelerationIncludingGravity;
+            if (appState !== 'counting') return;
+
+            // Fallback to accelerationIncludingGravity if pure acceleration isn't available
+            const acc = event.acceleration || event.accelerationIncludingGravity;
             if (!acc || acc.x === null) return;
 
-            if (px !== null) {
-                const dx = acc.x - px;
-                const dy = acc.y - py;
-                const dz = acc.z - pz;
-                const delta = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                
-                const now = Date.now();
+            const x = acc.x || 0;
+            const y = acc.y || 0;
+            const z = acc.z || 0;
 
-                if (appState === 'calibrating') {
-                    document.getElementById('cal-force').innerText = delta.toFixed(2);
-                    
-                    // Simple peak detection for calibration (baseline > 4.0 m/s^2 to ignore hand shaking)
-                    if (delta > 4.0) {
-                        calInImpact = true;
-                        if (delta > currentPeak) currentPeak = delta;
-                    } else if (calInImpact && delta < 2.0) {
-                        // Impact finished
-                        calPeaks.push(currentPeak);
-                        document.getElementById('cal-count').innerText = `${calPeaks.length}/5`;
-                        calInImpact = false;
-                        currentPeak = 0;
-
-                        if (calPeaks.length >= 5) {
-                            finishCalibration();
-                        }
-                    }
-                } 
-                else if (appState === 'counting') {
-                    document.getElementById('live-force-display').innerText = delta.toFixed(2);
-
-                    // Jump Triggered
-                    if (delta > threshold && !inImpact && (now - lastJumpTime > 500)) {
-                        inImpact = true;
-                        lastJumpTime = now;
-                        registerJump();
-                    }
-                    
-                    // Reset impact flag
-                    if (inImpact && delta < (threshold * 0.3)) {
-                        inImpact = false;
-                    }
-                }
-            }
-
-            px = acc.x;
-            py = acc.y;
-            pz = acc.z;
-        }
-
-        function finishCalibration() {
-            const sum = calPeaks.reduce((a, b) => a + b, 0);
-            const avg = sum / calPeaks.length;
-            threshold = avg * 0.6; // Set threshold to 60% of average peak
+            // Calculate total vector magnitude
+            const magnitude = Math.sqrt(x*x + y*y + z*z);
             
-            localStorage.setItem('jumpThresholdV1', threshold.toString());
-            startCounting();
+            // Remove gravity baseline (~9.81 m/s^2) if using the combined sensor
+            const isIncludingGravity = event.acceleration == null;
+            const netForce = isIncludingGravity ? Math.abs(magnitude - 9.81) : magnitude;
+            
+            const now = Date.now();
+
+            // Display live force so user can see if they need to adjust the slider
+            document.getElementById('live-force-display').innerText = netForce.toFixed(2);
+
+            // Jump Triggered
+            if (netForce > threshold && !inImpact && (now - lastJumpTime > 500)) {
+                inImpact = true;
+                lastJumpTime = now;
+                registerJump();
+            }
+            
+            // Reset impact flag when force drops well below threshold
+            if (inImpact && netForce < (threshold * 0.4)) {
+                inImpact = false;
+            }
         }
 
         function registerJump() {
@@ -466,10 +438,6 @@
             window.removeEventListener('devicemotion', handleMotion);
             releaseWakeLock();
             switchScreen('setup-screen');
-            // Show previous button if we just stopped and have a threshold
-            if (localStorage.getItem('jumpThresholdV1')) {
-                document.getElementById('btn-use-prev').style.display = 'block';
-            }
         }
 
         function finishPractice() {
