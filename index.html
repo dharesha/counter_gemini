@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Yogic Jump Counter</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d0d0f;
+            --accent-color: #c8a96e;
+            --text-color: #ffffff;
+            --muted-color: #666666;
+            --sensing-color: #00ff66;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Space Grotesk', sans-serif;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .screen {
+            display: none;
+            width: 100%;
+            height: 100%;
+            padding: 2rem;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 2rem;
+            color: var(--accent-color);
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        p {
+            color: var(--muted-color);
+            margin-bottom: 2rem;
+            font-size: 1.1rem;
+        }
+
+        input[type="number"] {
+            background: transparent;
+            border: 2px solid var(--accent-color);
+            color: var(--text-color);
+            font-family: 'Space Mono', monospace;
+            font-size: 2rem;
+            text-align: center;
+            padding: 1rem;
+            border-radius: 12px;
+            width: 150px;
+            margin-bottom: 2rem;
+            outline: none;
+        }
+
+        button {
+            background-color: var(--accent-color);
+            color: var(--bg-color);
+            border: none;
+            padding: 1rem 2rem;
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 600;
+            font-size: 1.2rem;
+            border-radius: 30px;
+            cursor: pointer;
+            width: 100%;
+            max-width: 300px;
+            margin-bottom: 1rem;
+            transition: opacity 0.2s;
+        }
+
+        button:active {
+            opacity: 0.8;
+        }
+
+        button.secondary {
+            background-color: transparent;
+            color: var(--accent-color);
+            border: 2px solid var(--accent-color);
+        }
+
+        button.danger {
+            background-color: transparent;
+            color: #ff4444;
+            border: 2px solid #ff4444;
+        }
+
+        /* Counter Screen UI */
+        .top-bar {
+            position: absolute;
+            top: 2rem;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .jump-dot {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid var(--accent-color);
+            background: transparent;
+        }
+
+        .jump-dot.filled {
+            background: var(--accent-color);
+        }
+
+        .cycle-counter {
+            font-family: 'Space Mono', monospace;
+            font-size: 6rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            margin: 2rem 0;
+            transition: transform 0.1s ease-out;
+        }
+
+        .pulse {
+            animation: pulse-anim 0.3s ease-out;
+        }
+
+        @keyframes pulse-anim {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+
+        .live-force {
+            font-family: 'Space Mono', monospace;
+            font-size: 1.5rem;
+            color: var(--muted-color);
+            margin-bottom: 2rem;
+        }
+
+        .sensing-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            position: absolute;
+            top: 2rem;
+            left: 2rem;
+        }
+
+        .sensing-dot {
+            width: 10px;
+            height: 10px;
+            background-color: var(--sensing-color);
+            border-radius: 50%;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .sensing-text {
+            font-size: 0.9rem;
+            color: var(--sensing-color);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 2rem;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            padding: 0 2rem;
+        }
+
+        .controls button {
+            margin: 0;
+            width: 140px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="setup-screen" class="screen active">
+        <h1>Yogic Practice</h1>
+        <p>Set your target cycles<br>(1 cycle = 2 jumps)</p>
+        <input type="number" id="goal-input" value="108" min="1">
+        <button onclick="requestPermissionsAndStart('calibrate')">Start Calibration</button>
+        <button id="btn-use-prev" class="secondary" style="display: none;" onclick="requestPermissionsAndStart('previous')">Use Previous Calibration</button>
+    </div>
+
+    <div id="calibration-screen" class="screen">
+        <h2>Calibration</h2>
+        <p>Do 5 full jumps normally to set your impact threshold.</p>
+        <div class="cycle-counter" id="cal-count">0/5</div>
+        <div class="live-force" id="cal-force">0.00</div>
+        <button class="secondary" onclick="switchScreen('setup-screen')">Cancel</button>
+    </div>
+
+    <div id="counter-screen" class="screen">
+        <div class="sensing-container">
+            <div class="sensing-dot"></div>
+            <div class="sensing-text">Sensing</div>
+        </div>
+        
+        <div class="top-bar">
+            <div class="jump-dot" id="dot-1"></div>
+            <div class="jump-dot" id="dot-2"></div>
+        </div>
+
+        <div class="cycle-counter" id="cycle-display">0</div>
+        <div class="live-force">Force: <span id="live-force-display">0.00</span></div>
+
+        <div class="controls">
+            <button class="secondary" onclick="resetCounter()">Reset</button>
+            <button class="danger" onclick="stopPractice()">Stop</button>
+        </div>
+    </div>
+
+    <div id="done-screen" class="screen">
+        <h1>Goal Reached!</h1>
+        <p>You have completed your practice.</p>
+        <div class="cycle-counter" id="final-score">108</div>
+        <button onclick="resetApp()">Home</button>
+    </div>
+
+    <script>
+        // App State
+        let goal = 108;
+        let cycles = 0;
+        let currentJumps = 0;
+        let threshold = 0;
+        let inImpact = false;
+        let lastJumpTime = 0;
+        let appState = 'idle'; // idle, calibrating, counting
+        
+        // Accelerometer tracking
+        let px = null, py = null, pz = null;
+        
+        // Calibration tracking
+        let calPeaks = [];
+        let currentPeak = 0;
+        let calInImpact = false;
+
+        // Features
+        let wakeLock = null;
+        const speechTargets = [3, 7, 12, 21, 24, 33, 48, 64, 84, 96, 108];
+
+        // Initialization
+        window.onload = () => {
+            const savedThreshold = localStorage.getItem('jumpThresholdV1');
+            if (savedThreshold) {
+                document.getElementById('btn-use-prev').style.display = 'block';
+            }
+        };
+
+        // Screen Navigation
+        function switchScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        // Permissions & Startup (Triggered by user click)
+        async function requestPermissionsAndStart(mode) {
+            goal = parseInt(document.getElementById('goal-input').value) || 108;
+            
+            // Unlock Speech Synthesis
+            const utterance = new SpeechSynthesisUtterance('');
+            speechSynthesis.speak(utterance);
+
+            // Request WakeLock
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                }
+            } catch (err) {
+                console.log('WakeLock error:', err);
+            }
+
+            // iOS 13+ DeviceMotion Permission
+            if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceMotionEvent.requestPermission();
+                    if (permission === 'granted') {
+                        startMode(mode);
+                    } else {
+                        alert("Motion access denied. App cannot function.");
+                    }
+                } catch (console) {
+                    alert("Error requesting motion permissions.");
+                }
+            } else {
+                startMode(mode);
+            }
+        }
+
+        function startMode(mode) {
+            window.addEventListener('devicemotion', handleMotion);
+            
+            if (mode === 'previous') {
+                threshold = parseFloat(localStorage.getItem('jumpThresholdV1'));
+                startCounting();
+            } else {
+                startCalibration();
+            }
+        }
+
+        function startCalibration() {
+            appState = 'calibrating';
+            calPeaks = [];
+            currentPeak = 0;
+            calInImpact = false;
+            document.getElementById('cal-count').innerText = `0/5`;
+            switchScreen('calibration-screen');
+        }
+
+        function startCounting() {
+            appState = 'counting';
+            cycles = 0;
+            currentJumps = 0;
+            inImpact = false;
+            lastJumpTime = Date.now();
+            updateCounterUI();
+            switchScreen('counter-screen');
+        }
+
+        // Core Motion Logic
+        function handleMotion(event) {
+            const acc = event.accelerationIncludingGravity;
+            if (!acc || acc.x === null) return;
+
+            if (px !== null) {
+                const dx = acc.x - px;
+                const dy = acc.y - py;
+                const dz = acc.z - pz;
+                const delta = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                
+                const now = Date.now();
+
+                if (appState === 'calibrating') {
+                    document.getElementById('cal-force').innerText = delta.toFixed(2);
+                    
+                    // Simple peak detection for calibration (baseline > 4.0 m/s^2 to ignore hand shaking)
+                    if (delta > 4.0) {
+                        calInImpact = true;
+                        if (delta > currentPeak) currentPeak = delta;
+                    } else if (calInImpact && delta < 2.0) {
+                        // Impact finished
+                        calPeaks.push(currentPeak);
+                        document.getElementById('cal-count').innerText = `${calPeaks.length}/5`;
+                        calInImpact = false;
+                        currentPeak = 0;
+
+                        if (calPeaks.length >= 5) {
+                            finishCalibration();
+                        }
+                    }
+                } 
+                else if (appState === 'counting') {
+                    document.getElementById('live-force-display').innerText = delta.toFixed(2);
+
+                    // Jump Triggered
+                    if (delta > threshold && !inImpact && (now - lastJumpTime > 500)) {
+                        inImpact = true;
+                        lastJumpTime = now;
+                        registerJump();
+                    }
+                    
+                    // Reset impact flag
+                    if (inImpact && delta < (threshold * 0.3)) {
+                        inImpact = false;
+                    }
+                }
+            }
+
+            px = acc.x;
+            py = acc.y;
+            pz = acc.z;
+        }
+
+        function finishCalibration() {
+            const sum = calPeaks.reduce((a, b) => a + b, 0);
+            const avg = sum / calPeaks.length;
+            threshold = avg * 0.6; // Set threshold to 60% of average peak
+            
+            localStorage.setItem('jumpThresholdV1', threshold.toString());
+            startCounting();
+        }
+
+        function registerJump() {
+            currentJumps++;
+            
+            if (currentJumps === 1) {
+                document.getElementById('dot-1').classList.add('filled');
+            } else if (currentJumps === 2) {
+                cycles++;
+                currentJumps = 0;
+                
+                // UI Updates
+                document.getElementById('dot-1').classList.remove('filled');
+                document.getElementById('dot-2').classList.remove('filled');
+                
+                const display = document.getElementById('cycle-display');
+                display.innerText = cycles;
+                display.classList.remove('pulse');
+                void display.offsetWidth; // trigger reflow
+                display.classList.add('pulse');
+
+                checkSpeech();
+
+                if (cycles >= goal) {
+                    finishPractice();
+                }
+            }
+        }
+
+        function checkSpeech() {
+            if (speechTargets.includes(cycles)) {
+                const utterance = new SpeechSynthesisUtterance(cycles.toString());
+                speechSynthesis.speak(utterance);
+            }
+        }
+
+        function resetCounter() {
+            cycles = 0;
+            currentJumps = 0;
+            updateCounterUI();
+        }
+
+        function updateCounterUI() {
+            document.getElementById('cycle-display').innerText = cycles;
+            document.getElementById('dot-1').classList.toggle('filled', currentJumps >= 1);
+            document.getElementById('dot-2').classList.toggle('filled', currentJumps >= 2);
+        }
+
+        function stopPractice() {
+            appState = 'idle';
+            window.removeEventListener('devicemotion', handleMotion);
+            releaseWakeLock();
+            switchScreen('setup-screen');
+            // Show previous button if we just stopped and have a threshold
+            if (localStorage.getItem('jumpThresholdV1')) {
+                document.getElementById('btn-use-prev').style.display = 'block';
+            }
+        }
+
+        function finishPractice() {
+            appState = 'idle';
+            window.removeEventListener('devicemotion', handleMotion);
+            releaseWakeLock();
+            document.getElementById('final-score').innerText = cycles;
+            switchScreen('done-screen');
+        }
+
+        function resetApp() {
+            cycles = 0;
+            currentJumps = 0;
+            switchScreen('setup-screen');
+        }
+
+        async function releaseWakeLock() {
+            if (wakeLock !== null) {
+                await wakeLock.release();
+                wakeLock = null;
+            }
+        }
+    </script>
+</body>
+</html>
